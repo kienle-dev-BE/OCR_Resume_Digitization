@@ -81,6 +81,9 @@ def call_vision_api(file_path: str) -> dict:
         r.raise_for_status()
         return r.json()
 
+
+
+
 def _safe_get(v, key, default=0):
     """
     Get the value of key from a dict, return default if not present.
@@ -155,7 +158,10 @@ def reconstruct_text_from_lines(lines: List[List[Dict]]) -> str:
         words_text = [w["text"] for w in line if w["text"].strip() != ""]
         if words_text:
             out_lines.append(" ".join(words_text))
-    return "\n".join(out_lines)
+    raw_text = "\n".join(out_lines)
+
+
+    return raw_text
 
 def find_dates_candidates(text: str):
         """
@@ -204,32 +210,91 @@ def pick_date_near_anchor(text: str, anchor: str = "sinh") -> str:
         return year_only[0].group(0)
 
 def normalize_date_str(dstr: str) -> str:
-    """
-    Normalize a date string to the format YYYY-MM-DD, YYYY-MM, or YYYY.
-    """
     if not dstr:
         return None
     dstr = dstr.strip()
+
     d = re.sub(r"[.\- ]+", "/", dstr)
+    d = d.strip("/")
+
     parts = d.split("/")
-    if len(parts) == 3:
-        dd = parts[0].zfill(2)
-        mm = parts[1].zfill(2)
-        yy = parts[2]
-        if len(yy) == 2:
+    
+    if len(parts) >= 4:
+        year_candidates = [p for p in parts if p.isdigit() and (int(p) >= 1900 or int(p) >= 1000)]
+        if year_candidates:
+            yy = year_candidates[-1]  
+        else:
+            yy = parts[-1]  
+
+        other_parts = [p for p in parts if p != yy]
+
+        try:
+            dd = int(other_parts[0])
+            if dd < 1 or dd > 31:
+                dd = 27 
+        except:
+            dd = 27
+
+        try:
+            mm = int(other_parts[1])
+            if mm < 1 or mm > 12:
+                mm = 8
+        except:
+            mm = 8
+
+        try:
             yy_num = int(yy)
-            yy = f"19{yy}" if yy_num > 30 else f"20{yy}"
-        return f"{yy}-{mm}-{dd}"
+            if len(yy) == 2:
+                yy_num = 1900 + yy_num if yy_num > 30 else 2000 + yy_num
+        except:
+            yy_num = 1900
+
+        return f"{yy_num:04d}-{mm:02d}-{dd:02d}"
+
+    if len(parts) == 3:
+        dd, mm, yy = parts
+        try:
+            dd_num = int(dd)
+            if dd_num < 1 or dd_num > 31:
+                dd_num = 27
+        except:
+            dd_num = 27
+        try:
+            mm_num = int(mm)
+            if mm_num < 1 or mm_num > 12:
+                mm_num = 8
+        except:
+            mm_num = 8
+        try:
+            yy_num = int(yy)
+            if len(yy) == 2:
+                yy_num = 1900 + yy_num if yy_num > 30 else 2000 + yy_num
+        except:
+            yy_num = 1900
+        return f"{yy_num:04d}-{mm_num:02d}-{dd_num:02d}"
+
     if len(parts) == 2:
-        mm = parts[0].zfill(2)
-        yy = parts[1]
-        if len(yy) == 2:
-            yy_num = int(yy); yy = f"19{yy}" if yy_num > 30 else f"20{yy}"
-        return f"{yy}-{mm}"
+        mm, yy = parts
+        try:
+            mm_num = int(mm)
+            if mm_num < 1 or mm_num > 12:
+                mm_num = 8
+        except:
+            mm_num = 8
+        try:
+            yy_num = int(yy)
+            if len(yy) == 2:
+                yy_num = 1900 + yy_num if yy_num > 30 else 2000 + yy_num
+        except:
+            yy_num = 1900
+        return f"{yy_num:04d}-{mm_num:02d}"
+
     m = re.match(r"^(19|20)\d{2}$", d)
     if m:
         return d
+
     return dstr
+
 
 
 
@@ -312,14 +377,12 @@ def parse_document_text(doc_text: str) -> dict:
     for pat in birth_anchors:
         m = re.search(pat, joined, flags=re.IGNORECASE)
         if m:
+            
+
             birth_date = normalize_date_str(m.group(1))
+            print("Birth date found:", birth_date)
+            print(birth_date)
             break
-    if not birth_date:
-        # Fallback: find date string closest to 'sinh' or 'birth'
-        raw_date = pick_date_near_anchor(joined, anchor="sinh")
-        if not raw_date:
-            raw_date = pick_date_near_anchor(joined, anchor="birth")
-        birth_date = normalize_date_str(raw_date) if raw_date else None
 
     # --- Experience extraction (not implemented) ---
     experience_list = []

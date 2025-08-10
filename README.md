@@ -45,7 +45,7 @@ resume_ocr/                # Django project settings
   {
     "name": "Nguyễn Thị Lượn",
     "phone": null,
-    "birth_date": "27.18.1.1990",
+    "birth_date": "27.8.1990",
     "experience": []
   }
   ```
