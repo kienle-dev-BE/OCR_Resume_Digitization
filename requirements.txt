@@ -1,0 +1,8 @@
+Django>=3.2
+requests
+dotenv
+pdf2image
+gunicorn
+Pillow
+google-api-python-client
+python-dotenv
