@@ -182,32 +182,7 @@ def find_dates_candidates(text: str):
         year_only = list(re.finditer(r"\b(19|20)\d{2}\b", text))
         return full, mm_yyyy, year_only
 
-def pick_date_near_anchor(text: str, anchor: str = "sinh") -> str:
-    """
-    Find the date string closest to the anchor keyword (e.g., 'sinh', 'ngày sinh').
-    If not found, return the first candidate.
-    """
-    lower = text.lower()
-    anchor_pos = lower.find(anchor)
-    full, mm_yyyy, year_only = find_dates_candidates(text)
-    candidates = []
-    for m in full:
-        candidates.append((m.start(), m.group(0)))
-    for m in mm_yyyy:
-        candidates.append((m.start(), m.group(0)))
-    for m in year_only:
-        candidates.append((m.start(), m.group(0)))
-    if not candidates:
-        return None
-    if anchor_pos != -1:
-        candidates.sort(key=lambda x: abs(x[0] - anchor_pos))
-        return candidates[0][1]
-    else:
-        if full:
-            return full[0].group(0)
-        if mm_yyyy:
-            return mm_yyyy[0].group(0)
-        return year_only[0].group(0)
+
 
 def normalize_date_str(dstr: str) -> str:
     if not dstr:
@@ -315,74 +290,9 @@ def parse_document_text(doc_text: str) -> dict:
     joined = "\n".join(lines)
     lower = joined.lower()
 
-    # --- Name extraction ---
-    # Try to find name after anchor patterns (Vietnamese or English)
-    name = None
-    # Check Vietnamese anchors first
-    m = re.search(fr"{NAME_ANCHOR_PATTERNS_VI}[:\s\-]*(.+)", joined, flags=re.IGNORECASE)
-    if not m:
-        # If not found, check English anchors
-        m = re.search(fr"{NAME_ANCHOR_PATTERNS_EN}[:\s\-]*(.+)", joined, flags=re.IGNORECASE)
-    if m:
-        candidate = m.group(1).strip()
-        # Only take the first line after anchor (avoid capturing too much)
-        candidate = candidate.split("\n")[0].strip()
-        name = candidate.strip(" .:")
-    else:
-        # Fallback: use the last line with at least 2 words and letters (often signature)
-        for ln in reversed(lines):
-            # re.search(r"[A-Za-zÀ-ỹĐđ]", ln): checks if line contains at least one letter (Vietnamese included)
-            if len(ln.split()) >= 2 and re.search(r"[A-Za-zÀ-ỹĐđ]", ln):
-                # Ignore header lines like 'CỘNG HÒA...' or English headers
-                if re.search(HEADER_IGNORE_PATTERNS_VI, ln.lower()) or re.search(HEADER_IGNORE_PATTERNS_EN, ln.lower()):
-                    continue
-                name = ln
-                break
-
-
-    # --- Phone extraction ---
-    # Try to find phone number after Vietnamese or English anchors
-    phone = None
-    phone_anchors = [
-        r"Số\s*điện\s*thoại[:\s\-]*([\d\s\-\.]+)",  # Vietnamese
-        r"Phone[:\s\-]*([\d\s\-\.]+)",               # English
-    ]
-    for pat in phone_anchors:
-        m = re.search(pat, joined, flags=re.IGNORECASE)
-        if m:
-            # Remove all non-digit characters
-            phone_candidate = re.sub(r"\D", "", m.group(1))
-            if 9 <= len(phone_candidate) <= 12:
-                phone = phone_candidate
-                break
-    if not phone:
-        # Fallback: find 10 or 11 digit phone number starting with 0
-        mphone = re.search(r"\b(0\d{9,10})\b", joined)
-        if mphone:
-            phone = mphone.group(1)
-        else:
-            # Fallback: any 9-11 digit chunk
-            m2 = re.search(r"\b(\d{9,11})\b", joined)
-            phone = m2.group(1) if m2 else None
-
-    # --- Birth date extraction ---
-    # Try to find date after Vietnamese or English anchors
-    birth_anchors = [
-        r"Ngày\s*sinh[:\s\-]*([\d\/\.\- ]+)",   # Vietnamese
-        r"Sinh\s*năm[:\s\-]*([\d\/\.\- ]+)",   # Vietnamese
-        r"Date\s*of\s*Birth[:\s\-]*([\d\/\.\- ]+)", # English
-        r"Birth\s*date[:\s\-]*([\d\/\.\- ]+)",      # English
-    ]
-    birth_date = None
-    for pat in birth_anchors:
-        m = re.search(pat, joined, flags=re.IGNORECASE)
-        if m:
-            
-
-            birth_date = normalize_date_str(m.group(1))
-            print("Birth date found:", birth_date)
-            print(birth_date)
-            break
+    name = extract_name(lines, joined)
+    phone = extract_phone(joined)
+    birth_date = extract_birth_date(joined)
 
     # --- Experience extraction (not implemented) ---
     experience_list = []
@@ -393,6 +303,70 @@ def parse_document_text(doc_text: str) -> dict:
         "birth_date": birth_date,
         "experience": experience_list
     }
+def extract_name(lines, joined):
+    """
+    Extracts the name from the document lines and joined text.
+    """
+    # Try to find name after anchor patterns (Vietnamese or English)
+    name = None
+    m = re.search(fr"{NAME_ANCHOR_PATTERNS_VI}[:\s\-]*(.+)", joined, flags=re.IGNORECASE)
+    if not m:
+        m = re.search(fr"{NAME_ANCHOR_PATTERNS_EN}[:\s\-]*(.+)", joined, flags=re.IGNORECASE)
+    if m:
+        candidate = m.group(1).strip()
+        candidate = candidate.split("\n")[0].strip()
+        name = candidate.strip(" .:")
+    else:
+        for ln in reversed(lines):
+            if len(ln.split()) >= 2 and re.search(r"[A-Za-zÀ-ỹĐđ]", ln):
+                if re.search(HEADER_IGNORE_PATTERNS_VI, ln.lower()) or re.search(HEADER_IGNORE_PATTERNS_EN, ln.lower()):
+                    continue
+                name = ln
+                break
+    return name
+
+def extract_phone(joined):
+    """
+    Extracts the phone number from the joined document text.
+    """
+    phone = None
+    phone_anchors = [
+        r"Số\s*điện\s*thoại[:\s\-]*([\d\s\-\.]+)",
+        r"Phone[:\s\-]*([\d\s\-\.]+)",
+    ]
+    for pat in phone_anchors:
+        m = re.search(pat, joined, flags=re.IGNORECASE)
+        if m:
+            phone_candidate = re.sub(r"\D", "", m.group(1))
+            if 9 <= len(phone_candidate) <= 12:
+                phone = phone_candidate
+                break
+    if not phone:
+        mphone = re.search(r"\b(0\d{9,10})\b", joined)
+        if mphone:
+            phone = mphone.group(1)
+        else:
+            m2 = re.search(r"\b(\d{9,11})\b", joined)
+            phone = m2.group(1) if m2 else None
+    return phone
+
+def extract_birth_date(joined):
+    """
+    Extracts the birth date from the joined document text.
+    """
+    birth_anchors = [
+        r"Ngày\s*sinh[:\s\-]*([\d\/\.\- ]+)",
+        r"Sinh\s*năm[:\s\-]*([\d\/\.\- ]+)",
+        r"Date\s*of\s*Birth[:\s\-]*([\d\/\.\- ]+)",
+        r"Birth\s*date[:\s\-]*([\d\/\.\- ]+)",
+    ]
+    birth_date = None
+    for pat in birth_anchors:
+        m = re.search(pat, joined, flags=re.IGNORECASE)
+        if m:
+            birth_date = normalize_date_str(m.group(1))
+            break
+    return birth_date
 
 def ocr_reorder_and_parse(file_path: str) -> dict:
     """
