@@ -25,6 +25,7 @@ resume_ocr/                # Django project settings
 1. **Clone the repository**
 2. **Install dependencies**
    - Python 3.8+
+   - `venv\Scripts\activate`
    - `pip install -r requirements.txt`
    - Install poppler for PDF support (see below)
 3. **Set up Google Vision API**
@@ -42,12 +43,17 @@ resume_ocr/                # Django project settings
 - **Payload:** Multipart form with file field (image or PDF)
 - **Response:**
   ```json
-  {
-    "name": "Nguyễn Thị Lượn",
-    "phone": null,
-    "birth_date": "27.8.1990",
-    "experience": []
-  }
+    {
+        "name": "Ngô Gia Minh",
+        "phone": null,
+        "birth_date": "2000",
+        "address": "228 10 Sự Vạn Hạnh phường 12 Quân 10 TPHCM",
+        "cultural_level": "Đại học",
+        "profession": "Công nhân",
+        "major": "Điện tử",
+        "foreign_language": "tiếng Việt",
+        "experience": []
+    }
   ```
 
 ## Notes

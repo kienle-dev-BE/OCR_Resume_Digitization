@@ -1,3 +1,5 @@
+
+
 from pdf2image import convert_from_path
 
 
@@ -270,7 +272,17 @@ def normalize_date_str(dstr: str) -> str:
 
     return dstr
 
-
+def clean_text(text: str) -> str:
+    """
+    Remove periods, ellipses, leading/trailing special characters, normalize spaces between words.
+    """
+    if not text:
+        return text
+    text = text.strip(" .:;,-_…")
+    text = re.sub(r'[\.…]+', ' ', text)
+    text = text.replace('.', '').replace(',', '').replace('…', '')
+    text = re.sub(r'\s+', ' ', text)
+    return text
 
 
 # Name anchor patterns for extraction (Vietnamese & English, can be updated easily)
@@ -280,30 +292,58 @@ NAME_ANCHOR_PATTERNS_EN = r"(?:my name is|name|full name)"
 HEADER_IGNORE_PATTERNS_VI = r"cộng hòa|độc lập"
 HEADER_IGNORE_PATTERNS_EN = r"united states"
 
-def parse_document_text(doc_text: str) -> dict:
+
+def extract_text_after(rex: str, lines: list) -> str:
+    for ln in lines:
+        m = re.search(rex, ln, flags=re.IGNORECASE)
+        if m:
+            return clean_text(m.group(1).strip(" .:"))
+    return None
+
+def extract_foreign_language(lines: list) -> str:
     """
-    Analyze OCR text to extract fields: name, phone, birth_date, experience.
-    Uses heuristics and regex to find relevant information.
+    Extracts the foreign language from the document lines.
+    Looks for a line containing 'Ngoại ngữ' (case-insensitive) and returns the text after it,
     """
-    # Preprocess: split lines, remove leading/trailing spaces and punctuation
-    lines = [ln.strip(" .:") for ln in doc_text.splitlines() if ln.strip()]
-    joined = "\n".join(lines)
-    lower = joined.lower()
+    return extract_text_after(r"Ngoại\s*ngữ[:\-]?\s*(.+)", lines)
 
-    name = extract_name(lines, joined)
-    phone = extract_phone(joined)
-    birth_date = extract_birth_date(joined)
+def extract_profession(lines: list) -> str:
+    """
+    Extracts the profession (nghề nghiệp chuyên môn) from the document lines.
+    Looks for a line containing 'Nghề nghiệp chuyên môn:' (case-insensitive) and returns the text after it,
+    with special characters and trailing dots removed.
+    """
+    return extract_text_after(r"Nghề\s*nghiệp\s*chuyên\s*môn[:\-]?\s*(.+)", lines)
 
-    # --- Experience extraction (not implemented) ---
-    experience_list = []
+def extract_major(lines: list) -> str:
+    """
+    Extracts the major (ngành) from the document lines.
+    Looks for a line containing 'Ngành:' (case-insensitive) and returns the text after it.
+    """
+    return extract_text_after(r"Ngành[:\-\s]*\s*(.+)", lines)
 
-    return {
-        "name": name,
-        "phone": phone,
-        "birth_date": birth_date,
-        "experience": experience_list
-    }
-def extract_name(lines, joined):
+def extract_cultural_level(lines: list) -> str:
+    """
+    Extracts the cultural level (Trình độ văn hóa) from the document lines.
+    Looks for a line containing 'Trình độ văn hóa:' (case-insensitive) and returns the text after it.
+    """
+    # Tìm dòng chứa 'Trình độ văn hóa'
+    for ln in lines:
+        m = re.search(r"Trình\s*độ\s*văn\s*hóa[:\-]?\s*(.+)", ln, flags=re.IGNORECASE)
+        if m:
+            val = m.group(1)
+            cut = re.split(r"Ngoại\s*ngữ", val, flags=re.IGNORECASE)
+            return clean_text(cut[0]) if cut else clean_text(val)
+    return None
+
+def extract_address(lines: list) -> str:
+    """
+    Extracts the address from the document lines.
+    Looks for a line containing 'Địa chỉ:' (case-insensitive) and returns the text after it.
+    """
+    return extract_text_after(r"Địa\s*chỉ[:\-]?\s*(.+)", lines)
+
+def extract_name(lines: list, joined: str) -> str:
     """
     Extracts the name from the document lines and joined text.
     """
@@ -325,7 +365,7 @@ def extract_name(lines, joined):
                 break
     return name
 
-def extract_phone(joined):
+def extract_phone(joined: str) -> str:
     """
     Extracts the phone number from the joined document text.
     """
@@ -350,7 +390,7 @@ def extract_phone(joined):
             phone = m2.group(1) if m2 else None
     return phone
 
-def extract_birth_date(joined):
+def extract_birth_date(joined: str) -> str:
     """
     Extracts the birth date from the joined document text.
     """
@@ -367,6 +407,49 @@ def extract_birth_date(joined):
             birth_date = normalize_date_str(m.group(1))
             break
     return birth_date
+
+def extract_tail_paragraph(text: str) -> str:
+    start = text.find("theo nhu cầu")
+    end = text.find("quy định của công ty đề ra")
+    if start != -1 and end != -1:
+        # Lấy cả cụm kết thúc
+        end += len("quy định của công ty đề ra")
+        return text[start:end].strip()
+    return None
+
+def parse_document_text(doc_text: str) -> dict:
+    """
+    Analyze OCR text to extract fields: name, phone, birth_date, experience.
+    Uses heuristics and regex to find relevant information.
+    """
+    # Preprocess: split lines, remove leading/trailing spaces and punctuation
+    lines = [ln.strip(" .:") for ln in doc_text.splitlines() if ln.strip()]
+    joined = "\n".join(lines)
+    # lower = joined.lower()
+
+    name = extract_name(lines, joined)
+    phone = extract_phone(joined)
+    birth_date = extract_birth_date(joined)
+    address = extract_address(lines)
+    profession = extract_profession(lines)
+    foreign_language = extract_foreign_language(lines)
+    major = extract_major(lines)
+    cultural_level = extract_cultural_level(lines)
+
+    # --- Experience extraction (not implemented) ---
+    experience_list = []
+
+    return {
+        "name": name,
+        "phone": phone,
+        "birth_date": birth_date,
+        "address": address,
+        "cultural_level": cultural_level,
+        "profession": profession,
+        "major": major,
+        "foreign_language": foreign_language,
+        "experience": experience_list
+    }
 
 def ocr_reorder_and_parse(file_path: str) -> dict:
     """
