@@ -6,3 +6,4 @@ gunicorn
 Pillow
 google-api-python-client
 python-dotenv
+djangorestframework
